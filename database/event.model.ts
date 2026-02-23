@@ -106,7 +106,7 @@ const EventSchema = new Schema<IEvent>(
   },
   {
     timestamps: true, // Automatically manage createdAt and updatedAt
-  }
+  },
 );
 
 /**
@@ -130,7 +130,9 @@ EventSchema.pre('save', function (next) {
     try {
       const parsedDate = new Date(this.date);
       if (isNaN(parsedDate.getTime())) {
-        return next(new Error('Invalid date format. Please provide a valid date.'));
+        return next(
+          new Error('Invalid date format. Please provide a valid date.'),
+        );
       }
       // Store in ISO format (YYYY-MM-DD)
       this.date = parsedDate.toISOString().split('T')[0];
@@ -148,15 +150,42 @@ EventSchema.pre('save', function (next) {
         const timeParts = this.time.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
         if (timeParts) {
           let hours = parseInt(timeParts[1]);
-          const minutes = timeParts[2];
+          const minutesStr = timeParts[2];
+          const minutes = parseInt(minutesStr);
           const meridiem = timeParts[3]?.toLowerCase();
+
+          // Validate minutes are in range 0–59
+          if (isNaN(minutes) || minutes < 0 || minutes > 59) {
+            return next(
+              new Error('Invalid time format. Use HH:MM or HH:MM AM/PM'),
+            );
+          }
+
+          // Validate hours based on meridiem presence
+          if (meridiem) {
+            // If AM/PM is present, hours must be 1–12
+            if (isNaN(hours) || hours < 1 || hours > 12) {
+              return next(
+                new Error('Invalid time format. Use HH:MM or HH:MM AM/PM'),
+              );
+            }
+          } else {
+            // If no AM/PM, hours must be 0–23
+            if (isNaN(hours) || hours < 0 || hours > 23) {
+              return next(
+                new Error('Invalid time format. Use HH:MM or HH:MM AM/PM'),
+              );
+            }
+          }
 
           if (meridiem === 'pm' && hours !== 12) hours += 12;
           if (meridiem === 'am' && hours === 12) hours = 0;
 
-          this.time = `${hours.toString().padStart(2, '0')}:${minutes}`;
+          this.time = `${hours.toString().padStart(2, '0')}:${minutesStr}`;
         } else {
-          return next(new Error('Invalid time format. Use HH:MM or HH:MM AM/PM'));
+          return next(
+            new Error('Invalid time format. Use HH:MM or HH:MM AM/PM'),
+          );
         }
       } catch (error) {
         return next(new Error('Invalid time format. Use HH:MM or HH:MM AM/PM'));
@@ -171,6 +200,7 @@ EventSchema.pre('save', function (next) {
 EventSchema.index({ slug: 1 }, { unique: true });
 
 // Prevent model recompilation in development (Next.js hot reload)
-const Event: Model<IEvent> = models.Event || model<IEvent>('Event', EventSchema);
+const Event: Model<IEvent> =
+  models.Event || model<IEvent>('Event', EventSchema);
 
 export default Event;
