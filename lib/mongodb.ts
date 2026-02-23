@@ -25,16 +25,16 @@ interface MongooseCache {
  */
 declare global {
   // eslint-disable-next-line no-var
-  var mongoose: MongooseCache | undefined;
+  var _mongoose: MongooseCache | undefined;
 }
 
 // Initialize the cache
 // Use global variable to persist connection across hot reloads in development
-let cached: MongooseCache = global.mongoose || { conn: null, promise: null };
+let cached: MongooseCache = global._mongoose || { conn: null, promise: null };
 
 // Store the cache in global scope if not already present
-if (!global.mongoose) {
-  global.mongoose = cached;
+if (!global._mongoose) {
+  global._mongoose = cached;
 }
 
 /**
