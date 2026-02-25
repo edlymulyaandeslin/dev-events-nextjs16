@@ -1,8 +1,7 @@
-import { Document, Model, model, models, Schema, Types } from 'mongoose';
+import { Document, Schema, Types, model, models } from 'mongoose';
+import Event from './event.model';
 
-/**
- * TypeScript interface for Booking document
- */
+// TypeScript interface for Booking document
 export interface IBooking extends Document {
   eventId: Types.ObjectId;
   email: string;
@@ -24,8 +23,9 @@ const BookingSchema = new Schema<IBooking>(
       lowercase: true,
       validate: {
         validator: function (email: string) {
-          // RFC 5322 compliant email regex (simplified)
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          // RFC 5322 compliant email validation regex
+          const emailRegex =
+            /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
           return emailRegex.test(email);
         },
         message: 'Please provide a valid email address',
@@ -33,44 +33,54 @@ const BookingSchema = new Schema<IBooking>(
     },
   },
   {
-    timestamps: true, // Automatically manage createdAt and updatedAt
-  }
+    timestamps: true, // Auto-generate createdAt and updatedAt
+  },
 );
 
-/**
- * Pre-save hook to validate that the referenced Event exists
- * Prevents orphaned bookings
- */
-BookingSchema.pre('save', async function (next) {
+// Pre-save hook to validate that the referenced event exists before creating a booking.
+// NOTE: In Mongoose, an async pre hook should return/throw (not use the `next` callback).
+BookingSchema.pre('save', async function () {
+  const booking = this as IBooking;
+
   // Only validate eventId if it's new or modified
-  if (this.isNew || this.isModified('eventId')) {
+  if (booking.isModified('eventId') || booking.isNew) {
     try {
-      // Dynamically import Event model to avoid circular dependency
-      const Event = models.Event || (await import('./event.model')).default;
-      
-      const eventExists = await Event.findById(this.eventId);
-      
+      const eventExists = await Event.exists({ _id: booking.eventId });
+
       if (!eventExists) {
-        return next(new Error(`Event with ID ${this.eventId} does not exist`));
+        const error = new Error(`Event with ID ${booking.eventId} does not exist`);
+        error.name = 'ValidationError';
+        throw error;
       }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('does not exist')) {
-        return next(error);
+    } catch (err: unknown) {
+      // Preserve intentional validation errors.
+      if (err instanceof Error && err.name === 'ValidationError') {
+        throw err;
       }
-      return next(new Error('Error validating event reference'));
+
+      const validationError = new Error(
+        'Invalid event ID format or database error',
+      );
+      validationError.name = 'ValidationError';
+      throw validationError;
     }
   }
-
-  next();
 });
 
-// Create index on eventId for faster query performance
+// Create index on eventId for faster queries
 BookingSchema.index({ eventId: 1 });
 
-// Compound index for common queries (e.g., bookings per event)
+// Create compound index for common queries (events bookings by date)
 BookingSchema.index({ eventId: 1, createdAt: -1 });
 
-// Prevent model recompilation in development (Next.js hot reload)
-const Booking: Model<IBooking> = models.Booking || model<IBooking>('Booking', BookingSchema);
+// Create index on email for user booking lookups
+BookingSchema.index({ email: 1 });
+
+// Enforce one booking per events per email
+BookingSchema.index(
+  { eventId: 1, email: 1 },
+  { unique: true, name: 'uniq_event_email' },
+);
+const Booking = models.Booking || model<IBooking>('Booking', BookingSchema);
 
 export default Booking;
